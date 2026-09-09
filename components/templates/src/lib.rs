@@ -10,8 +10,8 @@ use tera::{Context, Tera};
 
 use crate::filters::{MarkdownFilter, NumFormatFilter};
 use crate::functions::{
-    GetHash, GetImageMetadata, GetPage, GetSection, GetTaxonomy, GetTaxonomyTerm, GetTaxonomyUrl,
-    GetUrl, LoadData, ResizeImage, Trans,
+    GetHash, GetImageMetadata, GetPage, GetPages, GetSection, GetTaxonomy, GetTaxonomyTerm,
+    GetTaxonomyUrl, GetUrl, LoadData, ResizeImage, Trans,
 };
 use config::Config;
 use errors::{Context as ErrorContext, Result, bail};
@@ -66,6 +66,7 @@ pub static ZOLA_TERA: LazyLock<Tera> = LazyLock::new(|| {
     tera.register_function("get_hash", GetHash::default());
     tera.register_function("get_section", GetSection::default());
     tera.register_function("get_page", GetPage::default());
+    tera.register_function("get_pages", GetPages::default());
     tera.register_function("get_taxonomy", GetTaxonomy::default());
     tera.register_function("get_taxonomy_term", GetTaxonomyTerm::default());
     tera.register_function("get_taxonomy_url", GetTaxonomyUrl::default());

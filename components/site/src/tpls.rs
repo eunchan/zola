@@ -79,6 +79,14 @@ pub fn register_tera_global_fns(site: &mut Site) {
         ),
     );
     site.tera.register_function(
+        "get_pages",
+        functions::GetPages::new(
+            site.base_path.clone(),
+            &site.config.default_language,
+            site.cache.clone(),
+        ),
+    );
+    site.tera.register_function(
         "get_section",
         functions::GetSection::new(
             site.base_path.clone(),

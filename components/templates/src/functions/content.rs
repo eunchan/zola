@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use render::RenderCache;
+use tera::value::Key;
 use tera::{Error, Function, Kwargs, State, TeraResult, Value};
 
 #[derive(Debug)]
@@ -143,6 +144,150 @@ impl Function<TeraResult<Value>> for GetSection {
                 }
             }
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct GetPages {
+    _base_path: PathBuf,
+    cache: Arc<RenderCache>,
+    default_lang: String,
+}
+
+impl GetPages {
+    pub fn new(base_path: PathBuf, default_lang: &str, cache: Arc<RenderCache>) -> Self {
+        Self { _base_path: base_path.join("content"), default_lang: default_lang.to_string(), cache }
+    }
+}
+
+impl Default for GetPages {
+    fn default() -> Self {
+        Self {
+            _base_path: PathBuf::new(),
+            default_lang: String::new(),
+            cache: Arc::new(RenderCache::default()),
+        }
+    }
+}
+
+impl Function<TeraResult<Value>> for GetPages {
+    fn call(&self, kwargs: Kwargs, state: &State) -> TeraResult<Value> {
+        let lang: String = kwargs
+            .get::<String>("lang")?
+            .or_else(|| state.get::<String>("lang").ok().flatten())
+            .unwrap_or_else(|| self.default_lang.clone());
+
+        let limit: Option<usize> = kwargs.get::<usize>("limit")?;
+        let section: Option<String> = kwargs.get::<String>("section")?;
+        let sort_by: String = kwargs.get::<String>("sort_by")?.unwrap_or_else(|| "date".to_string());
+        let reverse: bool = kwargs.get::<bool>("reverse")?.unwrap_or(false);
+
+        let mut pages: Vec<Value> = Vec::new();
+
+        for by_lang in self.cache.pages_by_canonical.values() {
+            if let Some(file_path) = by_lang.get(&lang) {
+                if let Some(cached) = self.cache.pages.get(file_path) {
+                    let page_val = &cached.value;
+
+                    let is_draft = page_val
+                        .as_map()
+                        .and_then(|m| m.get(&Key::from("draft")))
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if is_draft {
+                        continue;
+                    }
+
+                    let is_hidden = page_val
+                        .as_map()
+                        .and_then(|m| m.get(&Key::from("hidden")))
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if is_hidden {
+                        continue;
+                    }
+
+                    if let Some(ref sec) = section {
+                        let sec_clean = sec
+                            .trim_matches('/')
+                            .trim_end_matches("/_index.md")
+                            .trim_end_matches("_index.md")
+                            .trim_matches('/');
+                        let sec_parts: Vec<&str> =
+                            sec_clean.split('/').filter(|s| !s.is_empty()).collect();
+
+                        let page_components = page_val
+                            .as_map()
+                            .and_then(|m| m.get(&Key::from("components")))
+                            .and_then(|v| v.as_array());
+
+                        let matches_sec = if let Some(components) = page_components {
+                            let comp_strs: Vec<&str> =
+                                components.iter().filter_map(|c| c.as_str()).collect();
+                            comp_strs.starts_with(&sec_parts)
+                        } else {
+                            false
+                        };
+
+                        if !matches_sec {
+                            continue;
+                        }
+                    }
+
+                    pages.push(page_val.clone());
+                }
+            }
+        }
+
+        match sort_by.as_str() {
+            "date" => {
+                pages.sort_by(|a, b| {
+                    let date_a = a.as_map().and_then(|m| m.get(&Key::from("date"))).and_then(|v| v.as_str()).unwrap_or("");
+                    let date_b = b.as_map().and_then(|m| m.get(&Key::from("date"))).and_then(|v| v.as_str()).unwrap_or("");
+                    let ord = if reverse {
+                        date_a.cmp(date_b)
+                    } else {
+                        date_b.cmp(date_a)
+                    };
+                    if ord == std::cmp::Ordering::Equal {
+                        let title_a = a.as_map().and_then(|m| m.get(&Key::from("title"))).and_then(|v| v.as_str()).unwrap_or("");
+                        let title_b = b.as_map().and_then(|m| m.get(&Key::from("title"))).and_then(|v| v.as_str()).unwrap_or("");
+                        title_a.cmp(title_b)
+                    } else {
+                        ord
+                    }
+                });
+            }
+            "weight" => {
+                pages.sort_by(|a, b| {
+                    let w_a = a.as_map().and_then(|m| m.get(&Key::from("weight"))).and_then(|v| v.as_i64()).unwrap_or(0);
+                    let w_b = b.as_map().and_then(|m| m.get(&Key::from("weight"))).and_then(|v| v.as_i64()).unwrap_or(0);
+                    if reverse {
+                        w_b.cmp(&w_a)
+                    } else {
+                        w_a.cmp(&w_b)
+                    }
+                });
+            }
+            "title" => {
+                pages.sort_by(|a, b| {
+                    let title_a = a.as_map().and_then(|m| m.get(&Key::from("title"))).and_then(|v| v.as_str()).unwrap_or("");
+                    let title_b = b.as_map().and_then(|m| m.get(&Key::from("title"))).and_then(|v| v.as_str()).unwrap_or("");
+                    if reverse {
+                        title_b.cmp(title_a)
+                    } else {
+                        title_a.cmp(title_b)
+                    }
+                });
+            }
+            _ => {}
+        }
+
+        if let Some(limit) = limit {
+            pages.truncate(limit);
+        }
+
+        Ok(Value::from(pages))
     }
 }
 
@@ -352,5 +497,59 @@ mod tests {
         let res = get_section.call(kwargs, &State::new(&ctx));
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), Value::none());
+    }
+
+    #[test]
+    fn can_get_pages() {
+        let config = Config::default_for_test();
+        let mut library = Library::new(&config);
+
+        let mut p1 = create_page("Post 1", "content/blog/post1.md", "en");
+        p1.meta.date = Some("2023-01-01".to_string());
+        p1.components = vec!["blog".to_string(), "post1".to_string()];
+        library.insert_page(p1);
+
+        let mut p2 = create_page("Post 2", "content/blog/post2.md", "en");
+        p2.meta.date = Some("2023-01-05".to_string());
+        p2.components = vec!["blog".to_string(), "post2".to_string()];
+        library.insert_page(p2);
+
+        let mut p3 = create_page("Wiki Page", "content/wiki/page.md", "en");
+        p3.meta.date = Some("2023-01-03".to_string());
+        p3.components = vec!["wiki".to_string(), "page".to_string()];
+        library.insert_page(p3);
+
+        let tera = Tera::default();
+        let mut cache = RenderCache::new(&config);
+        cache.build(&library, &[], &tera);
+        let base_path = "/test/base/path".into();
+
+        let get_pages = GetPages::new(base_path, "en", Arc::new(cache));
+
+        // Default sort by date descending
+        let kwargs = Kwargs::default();
+        let ctx = Context::new();
+        let res = get_pages.call(kwargs, &State::new(&ctx)).unwrap();
+        let list = res.as_array().unwrap();
+        assert_eq!(list.len(), 3);
+        assert_eq!(list[0].as_map().unwrap().get(&Key::from("title")).unwrap().as_str().unwrap(), "Post 2");
+        assert_eq!(list[1].as_map().unwrap().get(&Key::from("title")).unwrap().as_str().unwrap(), "Wiki Page");
+        assert_eq!(list[2].as_map().unwrap().get(&Key::from("title")).unwrap().as_str().unwrap(), "Post 1");
+
+        // With limit
+        let kwargs = Kwargs::from([("limit", Value::from(2))]);
+        let res = get_pages.call(kwargs, &State::new(&ctx)).unwrap();
+        let list = res.as_array().unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].as_map().unwrap().get(&Key::from("title")).unwrap().as_str().unwrap(), "Post 2");
+        assert_eq!(list[1].as_map().unwrap().get(&Key::from("title")).unwrap().as_str().unwrap(), "Wiki Page");
+
+        // Filter by section
+        let kwargs = Kwargs::from([("section", Value::from("blog"))]);
+        let res = get_pages.call(kwargs, &State::new(&ctx)).unwrap();
+        let list = res.as_array().unwrap();
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].as_map().unwrap().get(&Key::from("title")).unwrap().as_str().unwrap(), "Post 2");
+        assert_eq!(list[1].as_map().unwrap().get(&Key::from("title")).unwrap().as_str().unwrap(), "Post 1");
     }
 }
