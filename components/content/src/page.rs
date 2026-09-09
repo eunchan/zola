@@ -97,7 +97,8 @@ impl Page {
         config: &Config,
         base_path: &Path,
     ) -> Result<Page> {
-        let (meta, content) = split_page_content(file_path, content)?;
+        let (mut meta, content) = split_page_content(file_path, content)?;
+        crate::dir_meta::apply_dir_meta_to_page(file_path, base_path, config, &mut meta)?;
         let mut page = Page::new(file_path, meta, base_path);
 
         page.lang =
@@ -776,5 +777,41 @@ Bonjour le monde"#
         assert_eq!(page.lang, "fr".to_string());
         assert_eq!(page.slug, "hello");
         assert_eq!(page.permalink, "http://a-website.com/bonjour/");
+    }
+
+    #[test]
+    fn can_inherit_dir_meta_from_file() {
+        let dir = tempdir().unwrap();
+        let content_dir = dir.path().join("content");
+        let blog_dir = content_dir.join("blog").join("posts").join("design");
+        fs::create_dir_all(&blog_dir).unwrap();
+
+        fs::write(
+            blog_dir.join(".meta.yaml"),
+            "categories: ['design']\ntoc: true\n",
+        )
+        .unwrap();
+
+        let post_path = blog_dir.join("my-post.md");
+        fs::write(
+            &post_path,
+            "+++\ntitle = \"Open Source\"\n[taxonomies]\ntags = [\"hardware\"]\n+++\nHello",
+        )
+        .unwrap();
+
+        let mut config = Config::default();
+        config.taxonomies = vec![
+            config::TaxonomyConfig { name: "categories".to_string(), ..Default::default() },
+            config::TaxonomyConfig { name: "tags".to_string(), ..Default::default() },
+        ];
+
+        let page = Page::from_file(&post_path, &config, dir.path()).unwrap();
+        assert_eq!(page.meta.title, Some("Open Source".to_string()));
+        assert_eq!(page.meta.taxonomies["categories"], vec!["design".to_string()]);
+        assert_eq!(page.meta.taxonomies["tags"], vec!["hardware".to_string()]);
+        assert_eq!(
+            page.meta.extra.as_map().unwrap().get(&tera::value::Key::from("toc")).unwrap(),
+            &tera::Value::from(true)
+        );
     }
 }

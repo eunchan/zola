@@ -7,3 +7,4 @@ mod split;
 pub use page::PageFrontMatter;
 pub use section::SectionFrontMatter;
 pub use split::{split_page_content, split_section_content};
+pub(crate) use extra::toml_value_to_tera;

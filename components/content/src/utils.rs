@@ -5,7 +5,7 @@ use unicode_segmentation::UnicodeSegmentation;
 use walkdir::WalkDir;
 
 use config::Config;
-use utils::fs::is_temp_file;
+use utils::fs::{is_dotfile, is_temp_file};
 use utils::table_of_contents::Heading;
 
 pub fn has_anchor(headings: &[Heading], anchor: &str) -> bool {
@@ -37,7 +37,7 @@ pub fn find_related_assets(path: &Path, config: &Config, recursive: bool) -> Vec
     for entry in builder.into_iter().filter_map(std::result::Result::ok) {
         let entry_path = entry.path();
 
-        if entry_path.is_file() && !is_temp_file(entry_path) {
+        if entry_path.is_file() && !is_temp_file(entry_path) && !is_dotfile(entry_path) {
             match entry_path.extension() {
                 Some(e) => match e.to_str() {
                     Some("md") => continue,

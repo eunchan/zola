@@ -9,6 +9,7 @@ mod sorting;
 mod taxonomies;
 mod types;
 mod utils;
+pub mod dir_meta;
 
 pub use file_info::FileInfo;
 pub use front_matter::{PageFrontMatter, SectionFrontMatter};

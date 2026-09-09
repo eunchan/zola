@@ -87,7 +87,8 @@ impl Section {
         config: &Config,
         base_path: &Path,
     ) -> Result<Section> {
-        let (meta, content) = split_section_content(file_path, content)?;
+        let (mut meta, content) = split_section_content(file_path, content)?;
+        crate::dir_meta::apply_dir_meta_to_section(file_path, base_path, config, &mut meta)?;
         let mut section = Section::new(file_path, meta, base_path);
         section.lang = section
             .file
