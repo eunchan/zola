@@ -242,10 +242,15 @@ impl<'a> Queue<'a> {
 
             match job {
                 Job::Page(page) => {
+                    let page_dir = if page.path.ends_with(".html") {
+                        Path::new(&page.path).parent().unwrap_or_else(|| Path::new(""))
+                    } else {
+                        Path::new(&page.path)
+                    };
                     let dest = self
                         .site
                         .output_path
-                        .join(page.path.strip_prefix('/').unwrap_or(&page.path));
+                        .join(page_dir.strip_prefix("/").unwrap_or(page_dir));
                     self.site.copy_assets(page.file.path.parent().unwrap(), &page.assets, &dest)?;
                 }
                 Job::SectionAssets { section, path } => {
@@ -320,7 +325,11 @@ impl<'a> Queue<'a> {
 
     fn render_page(&'a self, page: &'a Page) -> Result<RenderedOutput> {
         let content = self.renderer().render_page(page)?;
-        let path = PathBuf::from(&page.path).join("index.html");
+        let path = if page.path.ends_with(".html") {
+            PathBuf::from(page.path.strip_prefix('/').unwrap_or(&page.path))
+        } else {
+            PathBuf::from(page.path.strip_prefix('/').unwrap_or(&page.path)).join("index.html")
+        };
         Ok(RenderedOutput { path, content, kind: OutputKind::Html })
     }
 

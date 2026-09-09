@@ -163,12 +163,22 @@ impl Page {
             format!("/{}", path)
         };
 
-        if !page.path.ends_with('/') {
-            page.path = format!("{}/", page.path);
+        if config.use_directory_urls || (page.file.name == "index" && page.file.colocated_path.is_none()) {
+            if !page.path.ends_with('/') {
+                page.path = format!("{}/", page.path);
+            }
+        } else {
+            if page.path.ends_with('/') {
+                page.path.pop();
+            }
+            if !page.path.ends_with(".html") {
+                page.path = format!("{}.html", page.path);
+            }
         }
 
         page.components = page
             .path
+            .trim_end_matches(".html")
             .split('/')
             .map(|p| p.to_string())
             .filter(|p| !p.is_empty())
@@ -585,6 +595,25 @@ Hello world"#;
         assert!(res.is_ok());
         let page = res.unwrap();
         assert_eq!(page.path, "/articles/ho/");
+    }
+
+    #[test]
+    fn can_make_url_without_directory_urls() {
+        let mut config = Config::default();
+        config.use_directory_urls = false;
+        let content = r#"
++++
+title = "Hello"
++++
+Hello world"#
+            .to_string();
+        let res = Page::parse(Path::new("content/posts/hello.md"), &content, &config, &PathBuf::new());
+        assert!(res.is_ok());
+        let page = res.unwrap();
+
+        assert_eq!(page.path, "/posts/hello.html");
+        assert_eq!(page.permalink, "http://a-website.com/posts/hello.html");
+        assert_eq!(page.components, vec!["posts", "hello"]);
     }
 
     #[test]

@@ -120,6 +120,8 @@ pub struct Config {
     pub generate_robots_txt: bool,
     /// Whether to exclude paginated pages in sitemap; can take values "none", "all"
     pub exclude_paginated_pages_in_sitemap: ExcludePaginatedPagesInSitemap,
+    /// Whether to use directory URLs (e.g. /slug/index.html) or plain file URLs (/slug.html)
+    pub use_directory_urls: bool,
 }
 
 #[derive(Serialize)]
@@ -142,6 +144,7 @@ pub struct SerializedConfig<'a> {
     generate_sitemap: bool,
     generate_robots_txt: bool,
     exclude_paginated_pages_in_sitemap: ExcludePaginatedPagesInSitemap,
+    use_directory_urls: bool,
 }
 
 impl Config {
@@ -254,6 +257,7 @@ impl Config {
     /// Makes a url, taking into account that the base url might have a trailing slash
     pub fn make_permalink(&self, path: &str) -> String {
         let trailing_bit = if path.ends_with('/')
+            || path.ends_with(".html")
             || self.feed_filenames.iter().any(|feed_filename| path.ends_with(feed_filename))
             || path.is_empty()
             || path.contains("#")
@@ -415,6 +419,7 @@ impl Config {
             generate_sitemap: self.generate_sitemap,
             generate_robots_txt: self.generate_robots_txt,
             exclude_paginated_pages_in_sitemap: self.exclude_paginated_pages_in_sitemap,
+            use_directory_urls: self.use_directory_urls,
         }
     }
 }
@@ -488,6 +493,7 @@ impl Default for Config {
             generate_sitemap: true,
             generate_robots_txt: true,
             exclude_paginated_pages_in_sitemap: ExcludePaginatedPagesInSitemap::None,
+            use_directory_urls: true,
         }
     }
 }

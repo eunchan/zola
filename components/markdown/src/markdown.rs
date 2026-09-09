@@ -447,7 +447,16 @@ impl<'a> State<'a> {
                 }
             }
         } else if is_colocated_asset_link(link) {
-            format!("{}{}", ctx.current_permalink, link)
+            let base = if ctx.current_permalink.ends_with(".html") {
+                if let Some(idx) = ctx.current_permalink.rfind('/') {
+                    &ctx.current_permalink[..=idx]
+                } else {
+                    ctx.current_permalink
+                }
+            } else {
+                ctx.current_permalink
+            };
+            format!("{}{}", base, link)
         } else if is_external_link(link) {
             self.external_links.push(link.to_owned());
             link.to_owned()
