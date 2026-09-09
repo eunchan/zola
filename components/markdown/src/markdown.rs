@@ -10,7 +10,7 @@ use regex::{Regex, RegexBuilder};
 use errors::{Error, Result, bail};
 use render::render_anchor_link;
 use utils::net::is_external_link;
-use utils::site::resolve_internal_link;
+use utils::site::{resolve_internal_link, resolve_relative_md_path};
 use utils::slugs::slugify_anchors;
 use utils::table_of_contents::{Heading, make_table_of_contents};
 use utils::types::InsertAnchor;
@@ -416,11 +416,19 @@ impl<'a> State<'a> {
             return Ok(link.to_string());
         }
 
-        let result = if link.starts_with("@/") {
-            if let Some(url) = resolve_colocated_asset(link, ctx) {
+        let is_md_link = link.starts_with("@/") || (!is_external_link(link) && (link.contains(".md#") || link.ends_with(".md")));
+        let result = if is_md_link {
+            let normalized_target = if link.starts_with("@/") {
+                link.to_string()
+            } else {
+                let resolved = resolve_relative_md_path(ctx.current_path, link);
+                format!("@/{}", resolved)
+            };
+
+            if let Some(url) = resolve_colocated_asset(&normalized_target, ctx) {
                 url
             } else {
-                match resolve_internal_link(link, ctx.permalinks) {
+                match resolve_internal_link(&normalized_target, ctx.permalinks) {
                     Ok(resolved) => {
                         self.internal_links.push((resolved.md_path, resolved.anchor));
                         resolved.permalink

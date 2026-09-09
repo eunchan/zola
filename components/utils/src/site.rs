@@ -17,6 +17,37 @@ pub struct ResolvedInternalLink {
 
 /// Resolves an internal link (of the `@/posts/something.md#hey` sort) to its absolute link and
 /// returns the path + anchor as well
+pub fn resolve_relative_md_path(current_path: &str, link: &str) -> String {
+    let clean_link = if link.starts_with("@/") {
+        link.replacen("@/", "", 1)
+    } else {
+        link.to_string()
+    };
+    let parts: Vec<&str> = clean_link.splitn(2, "#").collect();
+    let file_part = parts[0];
+    let anchor = if parts.len() > 1 { format!("#{}", parts[1]) } else { String::new() };
+
+    let resolved_file = if link.starts_with("@/") || file_part.starts_with("/") {
+        file_part.trim_start_matches("/").to_string()
+    } else {
+        use std::path::{Path, Component};
+        let current_dir = Path::new(current_path).parent().unwrap_or(Path::new(""));
+        let combined = current_dir.join(file_part);
+        let mut normalized = Vec::new();
+        for comp in combined.components() {
+            match comp {
+                Component::CurDir => {}
+                Component::ParentDir => { normalized.pop(); }
+                Component::Normal(c) => normalized.push(c.to_string_lossy().to_string()),
+                _ => {}
+            }
+        }
+        normalized.join("/")
+    };
+
+    format!("{}{}", resolved_file, anchor)
+}
+
 pub fn resolve_internal_link(
     link: &str,
     permalinks: &HashMap<String, String>,
@@ -29,8 +60,16 @@ pub fn resolve_internal_link(
     // If we have slugification turned off, we might end up with some escaped characters so we need
     // to decode them first
     let decoded = percent_decode(parts[0].as_bytes()).decode_utf8_lossy().to_string();
-    let target =
-        permalinks.get(&decoded).ok_or_else(|| anyhow!("Relative link {} not found.", link))?;
+    let target = permalinks.get(&decoded).or_else(|| {
+        if decoded.ends_with("/index.md") {
+            let alt = decoded.replace("/index.md", "/_index.md");
+            permalinks.get(&alt)
+        } else if decoded == "index.md" {
+            permalinks.get("_index.md")
+        } else {
+            None
+        }
+    }).ok_or_else(|| anyhow!("Relative link {} not found (tried {}).", link, decoded))?;
     if parts.len() > 1 {
         Ok(ResolvedInternalLink {
             permalink: format!("{}#{}", target, parts[1]),
