@@ -42,5 +42,7 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.23.4-custom' }}
+          name: ${{ github.ref_type == 'tag' && github.ref_name || 'v0.23.4-custom' }}
           files: ${{ matrix.artifact_name }}
           generate_release_notes: true
