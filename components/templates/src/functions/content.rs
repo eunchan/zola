@@ -240,6 +240,34 @@ impl Function<TeraResult<Value>> for GetPages {
         }
 
         match sort_by.as_str() {
+            "update_date" | "updated" => {
+                fn get_effective_date<'a>(val: &'a Value) -> &'a str {
+                    let m = match val.as_map() {
+                        Some(m) => m,
+                        None => return "",
+                    };
+                    let updated = m.get(&Key::from("updated")).and_then(|v| v.as_str()).unwrap_or("");
+                    let date = m.get(&Key::from("date")).and_then(|v| v.as_str()).unwrap_or("");
+                    std::cmp::max(updated, date)
+                }
+
+                pages.sort_by(|a, b| {
+                    let date_a = get_effective_date(a);
+                    let date_b = get_effective_date(b);
+                    let ord = if reverse {
+                        date_a.cmp(date_b)
+                    } else {
+                        date_b.cmp(date_a)
+                    };
+                    if ord == std::cmp::Ordering::Equal {
+                        let title_a = a.as_map().and_then(|m| m.get(&Key::from("title"))).and_then(|v| v.as_str()).unwrap_or("");
+                        let title_b = b.as_map().and_then(|m| m.get(&Key::from("title"))).and_then(|v| v.as_str()).unwrap_or("");
+                        title_a.cmp(title_b)
+                    } else {
+                        ord
+                    }
+                });
+            }
             "date" => {
                 pages.sort_by(|a, b| {
                     let date_a = a.as_map().and_then(|m| m.get(&Key::from("date"))).and_then(|v| v.as_str()).unwrap_or("");
@@ -522,9 +550,9 @@ mod tests {
         let tera = Tera::default();
         let mut cache = RenderCache::new(&config);
         cache.build(&library, &[], &tera);
-        let base_path = "/test/base/path".into();
+        let base_path: PathBuf = "/test/base/path".into();
 
-        let get_pages = GetPages::new(base_path, "en", Arc::new(cache));
+        let get_pages = GetPages::new(base_path.clone(), "en", Arc::new(cache));
 
         // Default sort by date descending
         let kwargs = Kwargs::default();
@@ -551,5 +579,22 @@ mod tests {
         assert_eq!(list.len(), 2);
         assert_eq!(list[0].as_map().unwrap().get(&Key::from("title")).unwrap().as_str().unwrap(), "Post 2");
         assert_eq!(list[1].as_map().unwrap().get(&Key::from("title")).unwrap().as_str().unwrap(), "Post 1");
+
+        // Sort by update_date
+        let mut p1_updated = create_page("Post 1 Updated", "content/blog/post1_up.md", "en");
+        p1_updated.meta.date = Some("2023-01-01".to_string());
+        p1_updated.meta.updated = Some("2023-01-10".to_string());
+        p1_updated.components = vec!["blog".to_string(), "post1_up".to_string()];
+        library.insert_page(p1_updated);
+
+        let mut cache_up = RenderCache::new(&config);
+        cache_up.build(&library, &[], &tera);
+        let get_pages_up = GetPages::new(base_path, "en", Arc::new(cache_up));
+
+        let kwargs = Kwargs::from([("sort_by", Value::from("update_date"))]);
+        let res = get_pages_up.call(kwargs, &State::new(&ctx)).unwrap();
+        let list = res.as_array().unwrap();
+        assert_eq!(list[0].as_map().unwrap().get(&Key::from("title")).unwrap().as_str().unwrap(), "Post 1 Updated");
+        assert_eq!(list[1].as_map().unwrap().get(&Key::from("title")).unwrap().as_str().unwrap(), "Post 2");
     }
 }
